@@ -1,0 +1,5 @@
+README:
+
+This code creates a simple jack client that 
+takes a specified biquad filter and processes audio passed to the client via
+the jack audio server.
