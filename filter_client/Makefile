@@ -3,15 +3,21 @@ CC = gcc					# compiler
 CFLAGS = -Wall -pedantic -std=gnu99 -g		# compiler flags
 LDFLAGS = -ljack -lm -pthread			# linker (ld) flags
 
-PROG = filter_client				# final executable name
-OBJ = filter_client.o biquad_df1.o		# object/source files to be created/compiled
+PROG = filter_client 				# final executable name
+PROG2 = commander
+OBJ = filter_client.o biquad_df1.o 		# object/source files to be created/compiled
+OBJ2 = commander.o
 ########################################
 
-all: 	$(PROG)
+all: 	$(PROG) $(PROG2)
 
 $(PROG): $(OBJ)
-	echo CC -o $@
+	@echo CC -o $@
 	@$(CC) -o $@ $(OBJ) $(LDFLAGS)
+
+$(PROG2): $(OBJ2)
+	@echo CC -o $@
+	@$(CC) -o $@ $(OBJ2) $(LDFLAGS)
 
 %.o: 	%.c
 	@echo CC $@
@@ -19,7 +25,7 @@ $(PROG): $(OBJ)
 
 clean:
 	@echo cleaning up...
-	@rm *.o $(PROG)
+	@rm *.o $(PROG) $(PROG2)
 
 run:
 	@./$(PROG) 

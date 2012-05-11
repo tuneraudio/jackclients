@@ -34,6 +34,16 @@ typedef struct {
     smp_type x1, x2, y1, y2;
 }biquad;
 
+/* this holds the control data instructions to compute a 
+ * biquad filter */
+typedef struct {
+    int type;	    /* see filter types below */
+    smp_type dBgain;/* gain in dB */
+    smp_type fc;    /* cut off / center frequency */
+    smp_type fs;    /* sample rate (not actual control data?) */
+    smp_type bw;    /* bandwidth in octaves */
+}control_list;
+
 extern smp_type BiQuad(smp_type sample, biquad * b);
 extern biquad *BiQuad_new(int type, smp_type dbGain, /* gain of filter */
                           smp_type freq,             /* center frequency */
@@ -54,8 +64,8 @@ enum {
 /* Filter functions */
 smp_type df1(smp_type sample, biquad *b);
 
-biquad 
-*BiQuad_new(int type, smp_type dbGain, smp_type freq, 
+biquad *
+compute_biquad(int type, smp_type dbGain, smp_type freq, 
 	smp_type srate, smp_type bandwidth);
 
 #endif

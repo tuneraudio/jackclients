@@ -32,7 +32,8 @@ df1(smp_type sample, biquad * b)
 }
 
 /* sets up a BiQuad Filter */
-biquad *BiQuad_new(int type, smp_type dbGain, smp_type freq,
+biquad *
+compute_biquad(int type, smp_type dbGain, smp_type freq,
 smp_type srate, smp_type bandwidth)
 {
     biquad *b;
