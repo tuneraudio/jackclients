@@ -15,6 +15,7 @@ int main(void)
     socklen_t t;
     struct sockaddr_un remote;
     char command[64];
+    char *nl;
 
     if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
 	perror("socket");
@@ -37,9 +38,14 @@ int main(void)
 
     while(printf("command> "), fgets(command, sizeof(command), stdin)) {
 
-	/* send message */
+	/* remove NL character */
+	nl = strchr(command,'\n'); 
+	if (nl != NULL)
+	    *nl = '\0';
+
 	/* implement API interface here? */
 	
+	/* send message */
 	if (send(s, command, strlen(command), 0) == -1) {
 	    perror("send");
 	    exit(1);
@@ -47,7 +53,7 @@ int main(void)
 
 	if ((t=recv(s, command, 100, 0)) > 0) {
 	    command[t] = '\0';
-	    printf("echo> %s", command);
+	    printf("status> %s\n", command);
 	} else {
 	    if (t < 0) perror("recv");
 	    else printf("Server closed connection\n");

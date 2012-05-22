@@ -1,6 +1,8 @@
 /*This is very simple biquad filter client that processes a single
  * channel of audio with a selected filter parameter set.
  */
+#include <jack/jack.h>
+#include "biquad_df1.h"
 
 #include <stdio.h>
 #include <errno.h>
@@ -13,14 +15,19 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-#include <jack/jack.h>
-#include "biquad_df1.h"
 
 #define SOCK_PATH "command_socket"
 #define RX_FLAGS 0 //MSG_WAITALL? -> wtf should this be anyways?
 #define NUM_ClIENTS 1
 
-/* GLOBALS */
+/* control parameters */
+#define TYPE ('t' | 'y' << 8 | 'p' << 8 | 'e' << 8 )
+#define CENTER_FREQUENCY ('f' | 'c' << 8)
+#define BANDWIDTH ('b' | 'w' << 8)
+#define GAIN ('g')
+
+
+/* Globals */
 jack_port_t *input_port;
 jack_port_t *output_port;
 jack_client_t *client;
@@ -35,12 +42,12 @@ enum {
 };
 int STATE = OFF;
 
-/* function prototypes */
+/* Prototypes */
 void * start_jack_client(void *ptr);
 void * start_messenger(void *ptr);
 int process (jack_nframes_t nframes, void *arg);
 void jack_shutdown (void *arg);
-char *parse_command(char *command, control_list **list);
+int parse_command(char *command, control_list **list, char *statusmessage);
 
 
 int
@@ -71,12 +78,14 @@ void *
 start_messenger(void *ptr)
 {
 
-    int s, s2, len;
+    int s, s2, len, i;
     socklen_t t;
     struct sockaddr_un local, remote;
     char command[32];
-    char *mstatus;
-    control_list *ctrls;
+    char mstatus[64];
+
+    /* alloc for message status */
+    //mstatus = malloc(sizeof(mstatus)
 
     /* create a unix stream socket */
     if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
@@ -101,46 +110,196 @@ start_messenger(void *ptr)
 	exit(1);
     }
 
-    /* wait for the remote connection */
+    /* wait for the remote connection(s) */
     for(;;) {
 	int done, n;
-	printf("Waiting for a connection...\n");
+	printf("fclient: >> Waiting for a connection... <<\n");
 	t = sizeof(remote);
 	if ((s2 = accept(s, (struct sockaddr *)&remote, &t)) == -1) {
 	    perror("accept");
 	    pthread_exit((void *)errno);
 	}
 
-	printf("Socket Connected.\n");
+	printf("fclient: >> Socket Connected <<\n");
 
+	/* loop to receive data/commands */
 	done = 0;
 	do {
+	    /* wait to receive a command */
 	    n = recv(s2, command, sizeof(command), RX_FLAGS );
-	    printf("echo> %s", command);
+
+	    /* echo back the command */
+	    if (command != '\0')
+		printf("COMMAND> %s\n", command);
+
 	    if (n <= 0) { 
 		if (n < 0) {
 		    perror("recv");
 		}
-		/* code to process command */
-		mstatus = parse_command(command, &ctrls);
-		
-
-
 		done = 1;
 	    }
+	    if (!done) {
+		
+		/*************************************
+		 process the command 
+		 *************************************/
 
-	    if (!done) 
-		/* code to generate response */
-		if (send(s2, command, n, 0) < 0) {
+		/* clear last status */
+		strcpy(mstatus, "");
+
+		/* parse the command */
+		if (!parse_command(command, &ctrls, mstatus)) {
+		    printf("command was parsed with status: %s\n", mstatus);
+
+		    /* clean up old filter */
+		    free(filter);
+
+		    /* Compute new biquad (callback) */
+		    filter = compute_biquad(ctrls->ftype, 
+			    ctrls->dBgain, 
+			    ctrls->fc, 
+			    ctrls->fs, 
+			    ctrls->bw); 
+
+		    printf("printing control list\n");
+		    printf("fc=%f, g=%f, bw=%f \n", ctrls->fc, ctrls->dBgain, ctrls->bw);
+		    printf("printing new coefficients:\n");
+		    printf("b0=%f, b1=%f, b2=%f, a1=%f, a2=%f \n\n", filter->b0, filter->b1, filter->b2, filter->a1, filter->a2);
+		}
+
+		/* transmit response */
+		if (send(s2, mstatus, n, 0) < 0) {
 		    perror("send");
 		    done = 1;
 		}
+
+		/* clear the command */
+		for (i = 0; i < n; i++) {
+		    command[i] = '\0';
+		}
+	    }
+
 	} while (!done);
 
 	close(s2);
     }
     pthread_exit(NULL);
     //return 0;
+}
+
+/**
+ * This is the control message parser for this filter client.
+ * It is called by whenever a valid message requesting filter 
+ * parameter changes is received by the messenger thread
+ * INPUTS:  command string, controls list, status message string
+ * OUTPUTS: int 
+ */
+int 
+parse_command(char *command, control_list **list, char *statusmessage)
+{    
+    char *control, *value;
+    char *saveptr, *endptr;
+    char *type;
+    double  fpval;
+
+    /* parse the command string into tokens */
+    /* control part */
+    control = strtok_r(command, "=", &saveptr);
+    if (control == NULL) {
+	printf("fclient: invalid format -> control=value\n");
+	strcpy(statusmessage, "no control specified\n");
+	return -1;
+    }
+
+    /* value part */
+    value = strtok_r(NULL, "\n", &saveptr);
+    if (value == NULL) {
+	printf("fclient: no value set!\n");
+	strcpy(statusmessage, "no value specified");
+	return -1;
+    }
+
+    /* filter type change request */
+    if (strcmp(control, "type") == 0) {
+	type = value;	
+	strcpy(statusmessage, "filter type change success");
+
+	/* determine the filter type */
+	if(strcmp(type, "lpf") == 0) {
+	    printf("requested an lpf\n");
+	    (*list)->ftype = LPF;
+	}
+	else if(strcmp(type, "hpf") == 0) {
+	    printf("requested an hpf\n");
+	    (*list)->ftype = HPF;
+	}
+	else if(strcmp(type, "bpf") == 0) {
+	    printf("requested an bpf\n");
+	    (*list)->ftype = BPF;
+	}
+	else if(strcmp(type, "notch") == 0) {
+	    printf("requested a notch filter\n");
+	    (*list)->ftype = NOTCH;
+	}
+	else if(strcmp(type, "peq") == 0) {
+	    printf("requested a peaking eq\n");
+	    (*list)->ftype = PEQ;
+	}
+	else if(strcmp(type, "lsh") == 0) {
+	    printf("requested a low shelf filter\n");
+	    (*list)->ftype = LSH;
+	}
+	else if(strcmp(type, "hsh") == 0) {
+	    printf("requested a high shelf filter\n");
+	    (*list)->ftype = HSH;
+
+	}else{
+	    printf("requested an unsupported filter type\n");
+	    strcpy(statusmessage, "");
+	    strcpy(statusmessage, "filter type change failed");
+
+	}
+    }else{
+
+	/* convert str to double */
+	fpval = strtod(value, &endptr);
+
+	if ((errno == ERANGE && (fpval == HUGE_VAL))
+		|| (errno != 0 && fpval == 0)) {
+	    perror("strtod");
+	    return -1;
+	}
+
+	if (endptr == value) {
+	    fprintf(stderr, "No digits were found\n");
+	    return -1;
+	}
+
+	printf("(control,value) = (%s,%f)\n",control, fpval);
+
+	if (*endptr != '\0')        /* Not necessarily an error... */
+	    printf("Further characters after number: %s\n", endptr);
+
+	/* check which control */
+	if (strcmp(control, "fc") == 0) {
+	    (*list)->fc = (smp_type)fpval;
+	    strcpy(statusmessage, "cut off frequency change success");
+	}
+	else if (strcmp(control, "g") == 0) {
+	    (*list)->dBgain = (smp_type)fpval;
+	    strcpy(statusmessage, "gain change success");
+	}
+	else if (strcmp(control, "bw") == 0) {
+	    (*list)->bw = (smp_type)fpval;
+	    strcpy(statusmessage, "bandwith change success");
+	    
+	}else{
+	    printf("control parameter requested not found in list!\n");
+	    strcpy(statusmessage, "no control in list");
+	    return -1;
+	}
+    }
+    return 0;
 }
 
 void *
@@ -171,18 +330,19 @@ start_jack_client(void *ptr)
 
     /* tell the JACK server to call `process()' whenever
        there is work to be done.  */
-
     jack_set_process_callback (client, process, 0);
+
 
     /* tell the JACK server to call `jack_shutdown()' if
        it ever shuts down, either entirely, or if it
        just decides to stop calling us.  */
-
     jack_on_shutdown (client, jack_shutdown, 0);
+
 
     /* display the current sample rate.  */
     printf ("engine sample rate: %" PRIu32 "\n",
 	    jack_get_sample_rate (client));
+
 
     /* create two ports */
 
@@ -197,15 +357,24 @@ start_jack_client(void *ptr)
 	exit (1);
     }
 
+    /* create and initialize the control list */
+    ctrls = malloc(sizeof(control_list));
+
+    /* set with default values */
+    ctrls->ftype = LPF;
+    ctrls->dBgain = 0;	// dB value
+    ctrls->fc = 100;	//Hz value
+    ctrls->fs = (smp_type)jack_get_sample_rate(client);
+    ctrls->bw = 0.25;	//bandwidth (ocataves)
+
     /* Compute default biquad lpf */
-    
-    smp_type gain = 0;	// dB value
-    smp_type fc = 100;	// Hz value
-    smp_type Fs = (smp_type)jack_get_sample_rate(client);
-    smp_type bw = 0.25;	// bandwith (octaves)
+    filter = compute_biquad(ctrls->ftype, 
+			    ctrls->dBgain, 
+			    ctrls->fc, 
+			    ctrls->fs, 
+			    ctrls->bw); 
 
-    filter = compute_biquad(LPF, gain, fc, Fs, bw); 
-
+    printf("initial coefficients:\n");
     printf("b0=%f, b1=%f, b2=%f, a1=%f, a2=%f \n", filter->b0, filter->b1, filter->b2, filter->a1, filter->a2);
 
 
@@ -260,7 +429,7 @@ start_jack_client(void *ptr)
 
     sleep (-1);
 
-    /* this is never reached but if the program
+    /* this is never reached, but if the program
        had some other way to exit besides being killed,
        they would be important to call.  */
 
@@ -271,7 +440,8 @@ start_jack_client(void *ptr)
 /****************************************************
  * The process callback for this JACK application 
  * (i.e. the audio workhorse function)
- * It is called by JACK at the appropriate times.
+ * It is called by JACK at the appropriate times
+ * Optimize this function for time!
 ****************************************************/
 int
 process (jack_nframes_t nframes, void *arg)
@@ -312,63 +482,3 @@ jack_shutdown (void *arg)
     exit (1);
 }
 
-/**
- * This is the control message parser for this filter client.
- * It is called by whenever a valid message requesting filter 
- * tap changes is received by the messenger thread
- * INPUTS:  command string
- * OUTPUTS: controls struct
- */
-char *
-parse_command(char *command, control_list **list)
-{    
-    char *control;
-    char *str;
-    char *mstatus 
-    smp_type decimal;
-    int i;
-
-    for (i = 0; strncmp(command + i, "=", 1); i++) {
-	*(control + i) = command[i];
-    }
-    i+=1;    // skip '='
-    while (!strncmp(command + i,"\0", 1)) {
-	str[i] = command[i];
-    }
-    /* if control is the filter "type" */
-    if (strcmp(control,"type")) {
-	*list.type = *str;
-    } else {
-	decimal = strtod(str, NULL);
-    }
-
-    /* determine which filter control */
-    switch (command[0]) {
-	case "fc": 
-	    *list->fc = decimal;
-	default:
-	    mstatus = "invalid";
-	    printf("invalid command");
-    }
-		
-    smp_type gain = 0;	// dB value
-    smp_type fc = 100;	// Hz value
-    smp_type Fs = (smp_type)jack_get_sample_rate(client);
-    smp_type bw = 0.25;	// bandwith (octaves)
-
-    /* Compute biquad filter */
-    filter = compute_biquad(LPF, gain, fc, Fs, bw); 
-    printf("b0=%f, b1=%f, b2=%f, a1=%f, a2=%f \n", filter->b0, filter->b1, filter->b2, filter->a1, filter->a2);
-
-    return ctrl;
-    }
-}
-/* this holds the control data instructions to compute a 
- * biquad filter 
-typedef struct {
-    int type;	    // see filter types below 
-    smp_type dBgain;// gain in dB 
-    smp_type fc;    // cut off / center frequency 
-    smp_type fs;    // sample rate (not actual control data?) 
-    smp_type bw;    // bandwidth in octaves 
-}control_list; */

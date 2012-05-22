@@ -37,7 +37,7 @@ typedef struct {
 /* this holds the control data instructions to compute a 
  * biquad filter */
 typedef struct {
-    int type;	    /* see filter types below */
+    int ftype;	    /* see filter types below */
     smp_type dBgain;/* gain in dB */
     smp_type fc;    /* cut off / center frequency */
     smp_type fs;    /* sample rate (not actual control data?) */
