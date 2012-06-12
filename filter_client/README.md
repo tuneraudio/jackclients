@@ -7,10 +7,10 @@ server.
 ## Overview
 
 To properly use this client you must run two separate processes.  The
-first is the jack client (filter_client) which processes real time audio
-and acts as a Unix socket server, and the second is a Unix socket client
-(commander) which transmits requests to change the state of the real
-time filter.
+first is the jack client (`filter_client`) which processes real time
+audio and acts as a Unix socket server, and the second is a Unix socket
+client (`commander`) which transmits requests to change the state of the
+real time filter.
 
 ## Usage
 
