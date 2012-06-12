@@ -22,7 +22,7 @@ http://www.smartelectronix.com/musicdsp/text/filters005.txt
 #endif
 
 #ifndef M_PI
-#define M_PI	3.14159265358979323846
+#define M_PI    3.14159265358979323846
 #endif
 
 /* whatever sample type you want */
@@ -32,17 +32,17 @@ typedef double smp_type;
 typedef struct {
     smp_type b0, b1, b2, a1, a2;
     smp_type x1, x2, y1, y2;
-}biquad;
+} biquad;
 
-/* this holds the control data instructions to compute a 
+/* this holds the control data instructions to compute a
  * biquad filter */
 typedef struct {
-    int ftype;	    /* see filter types below */
+    int ftype;      /* see filter types below */
     smp_type dBgain;/* gain in dB */
     smp_type fc;    /* cut off / center frequency */
     smp_type fs;    /* sample rate (not actual control data?) */
     smp_type bw;    /* bandwidth in octaves */
-}control_list;
+} control_list;
 
 extern smp_type BiQuad(smp_type sample, biquad * b);
 extern biquad *BiQuad_new(int type, smp_type dbGain, /* gain of filter */
@@ -65,7 +65,7 @@ enum {
 smp_type df1(smp_type sample, biquad *b);
 
 biquad *
-compute_biquad(int type, smp_type dbGain, smp_type freq, 
-	smp_type srate, smp_type bandwidth);
+compute_biquad(int type, smp_type dbGain, smp_type freq,
+               smp_type srate, smp_type bandwidth);
 
 #endif
