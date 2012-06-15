@@ -51,79 +51,42 @@ int parse_command(char *command, control_list **list, char *statusmessage);
 
 
 int
-main (int argc, char *argv[])
+main(int argc, char *argv[])
 {
-    int peng, pmssg;
     pthread_t aengine, messg;
 
-    /* create two threads: audio engine, and messenger */
-    if ((peng = pthread_create(&aengine, NULL, start_jack_client, NULL))) {
+    /* create the audio engine thread */
+    if ((pthread_create(&aengine, NULL, start_jack_client, NULL))) {
         printf("thread creation failed: %d\n", peng);
-    }
-
-    if ((pmssg = pthread_create(&messg, NULL, start_messenger, NULL))) {
-        printf("thread creation failed: %d\n", pmssg);
-    }
-
-    /* wait until threads complete before main continues */
-    pthread_join(aengine,NULL);
-    //pthread_join(messg,NULL);
-
-    /* shouldn't get here but if we do shut down safely */
-    jack_client_close (client);
-    exit (0);
-}
-
-void *
-start_messenger(void *ptr)
-{
-
-    int s, s2, len, i;
-    socklen_t t;
-    struct sockaddr_un local, remote;
-    char command[32];
-    char mstatus[64];
-
-    /* alloc for message status */
-    //mstatus = malloc(sizeof(mstatus)
-
-    /* create a unix stream socket */
-    if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
         perror("socket");
         exit(EXIT_FAILURE);
     }
 
-    /* assign the socket path */
-    local.sun_family = AF_UNIX;
-    strcpy(local.sun_path, SOCK_PATH);
-    /* unlink if socket already exists */
-    unlink(local.sun_path);
-    len = strlen(local.sun_path) + sizeof(local.sun_family);
-    if (bind(s, (struct sockaddr *)&local, len) == -1) {
-        perror("bind");
-        pthread_exit((void *)errno);
-    }
+    start_messager();
 
-    /* qeue up to 1 connections, then reject */
-    if (listen(s, NUM_ClIENTS) == -1) {
-        perror("listen");
-        exit(EXIT_FAILURE);
-    }
+    pthread_join(aengine, NULL);
+    jack_client_close(client);
+    return 0;
+}
 
+void
+run(int fd)
+{
     /* wait for the remote connection(s) */
-    for(;;) {
-        int done, n;
+    while (1) {
+        int done = 0, n;
+
         printf("fclient: >> Waiting for a connection... <<\n");
         t = sizeof(remote);
+
         if ((s2 = accept(s, (struct sockaddr *)&remote, &t)) == -1) {
             perror("accept");
-            pthread_exit((void *)errno);
+            _exit(errno);
         }
 
         printf("fclient: >> Socket Connected <<\n");
 
         /* loop to receive data/commands */
-        done = 0;
         do {
             /* wait to receive a command */
             n = recv(s2, command, sizeof(command), RX_FLAGS );
@@ -183,8 +146,42 @@ start_messenger(void *ptr)
 
         close(s2);
     }
-    pthread_exit(NULL);
-    //return 0;
+}
+
+void *
+start_messenger()
+{
+    int sfd, cfd;
+    int len, i;
+
+    struct sockaddr_un local, remote;
+    socklen_t t;
+
+    /* create a unix stream socket */
+    if ((sfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
+    /* assign the socket path */
+    local.sun_family = AF_UNIX;
+    strcpy(local.sun_path, SOCK_PATH);
+    unlink(local.sun_path);
+
+    len = strlen(local.sun_path) + sizeof(local.sun_family);
+
+    if (bind(sfd, (struct sockaddr *)&local, len) == -1) {
+        perror("bind");
+        exit(EXIT_FAILURE);
+    }
+
+    /* qeue up to 1 connections, then reject */
+    if (listen(sfd, NUM_ClIENTS) == -1) {
+        perror("listen");
+        exit(EXIT_FAILURE);
+    }
+
+    run();
 }
 
 /**
