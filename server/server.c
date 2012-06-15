@@ -1,24 +1,16 @@
-/*This is very simple biquad filter client that processes a single
- * channel of audio with a selected filter parameter set.
- */
-#include <jack/jack.h>
-#include "biquad_df1.h"
-
 #include <stdio.h>
+#include <stdbool.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
-
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <jack/jack.h>
 
-
-#define SOCK_PATH "command_socket"
-#define RX_FLAGS 0 //MSG_WAITALL? -> wtf should this be anyways?
-#define NUM_ClIENTS 1
+#include "config.h"
 
 /* control parameters */
 #define TYPE ('t' | 'y' << 8 | 'p' << 8 | 'e' << 8 )
@@ -26,37 +18,31 @@
 #define BANDWIDTH ('b' | 'w' << 8)
 #define GAIN ('g')
 
+typedef jack_default_audio_sample_t sample_t;
 
 /* Globals */
 jack_port_t *input_port;
 jack_port_t *output_port;
 jack_client_t *client;
-typedef jack_default_audio_sample_t sample_t;
-biquad *filter;
-control_list *ctrls;
-
-/* passthrough switch state */
-enum {
-    ON,
-    OFF,
-};
-int STATE = OFF;
+/* biquad *filter; */
 
 /* Prototypes */
-void * start_jack_client(void *ptr);
-void * start_messenger(void *ptr);
-int process (jack_nframes_t nframes, void *arg);
-void jack_shutdown (void *arg);
-int parse_command(char *command, control_list **list, char *statusmessage);
+void *start_jack_client(void *ptr);
+
+void start_messenger();
+
+int process(jack_nframes_t nframes, void *arg);
+void jack_shutdown(void *arg);
+int parse_command(char *command, control_list *list, char *statusmessage);
 
 
 int
 main(int argc, char *argv[])
 {
-    pthread_t aengine, messg;
+    pthread_t audio;
 
     /* create the audio engine thread */
-    if ((pthread_create(&aengine, NULL, start_jack_client, NULL))) {
+    if ((pthread_create(&audio, NULL, start_jack_client, NULL))) {
         printf("thread creation failed: %d\n", peng);
         perror("socket");
         exit(EXIT_FAILURE);
@@ -64,8 +50,7 @@ main(int argc, char *argv[])
 
     start_messager();
 
-    pthread_join(aengine, NULL);
-    jack_client_close(client);
+    pthread_join(audio, NULL);
     return 0;
 }
 
@@ -192,7 +177,7 @@ start_messenger()
  * OUTPUTS: int
  */
 int
-parse_command(char *command, control_list **list, char *statusmessage)
+parse_command(char *command, control_list *list, char *statusmessage)
 {
     char *control, *value;
     char *saveptr, *endptr;
@@ -224,25 +209,25 @@ parse_command(char *command, control_list **list, char *statusmessage)
         /* determine the filter type */
         if(strcmp(type, "lpf") == 0) {
             printf("requested an lpf\n");
-            (*list)->ftype = LPF;
+            list->ftype = LPF;
         } else if(strcmp(type, "hpf") == 0) {
             printf("requested an hpf\n");
-            (*list)->ftype = HPF;
+            list->ftype = HPF;
         } else if(strcmp(type, "bpf") == 0) {
             printf("requested an bpf\n");
-            (*list)->ftype = BPF;
+            list->ftype = BPF;
         } else if(strcmp(type, "notch") == 0) {
             printf("requested a notch filter\n");
-            (*list)->ftype = NOTCH;
+            list->ftype = NOTCH;
         } else if(strcmp(type, "peq") == 0) {
             printf("requested a peaking eq\n");
-            (*list)->ftype = PEQ;
+            list->ftype = PEQ;
         } else if(strcmp(type, "lsh") == 0) {
             printf("requested a low shelf filter\n");
-            (*list)->ftype = LSH;
+            list->ftype = LSH;
         } else if(strcmp(type, "hsh") == 0) {
             printf("requested a high shelf filter\n");
-            (*list)->ftype = HSH;
+            list->ftype = HSH;
 
         } else {
             printf("requested an unsupported filter type\n");
@@ -273,13 +258,13 @@ parse_command(char *command, control_list **list, char *statusmessage)
 
         /* check which control */
         if (strcmp(control, "fc") == 0) {
-            (*list)->fc = (smp_type)fpval;
+            list->fc = (smp_type)fpval;
             strcpy(statusmessage, "cut off frequency change success");
         } else if (strcmp(control, "g") == 0) {
-            (*list)->dBgain = (smp_type)fpval;
+            list->dBgain = (smp_type)fpval;
             strcpy(statusmessage, "gain change success");
         } else if (strcmp(control, "bw") == 0) {
-            (*list)->bw = (smp_type)fpval;
+            list->bw = (smp_type)fpval;
             strcpy(statusmessage, "bandwith change success");
         } else {
             printf("control parameter requested not found in list!\n");
@@ -295,7 +280,7 @@ start_jack_client(void *ptr)
 {
     const char *client_name = "filter";
     const char *server_name = NULL;
-    jack_options_t options = (JackNoStartServer|JackUseExactName|JackSessionID);
+    jack_options_t options = JackNoStartServer|JackUseExactName|JackSessionID;
     jack_status_t status;
 
     /* open a client connection to the JACK server */
@@ -346,21 +331,26 @@ start_jack_client(void *ptr)
     }
 
     /* create and initialize the control list */
-    ctrls = malloc(sizeof(control_list));
+    /* ctrls = malloc(sizeof(control_list)); */
+    /* if (!ctrls) { */
+    /*     perror("malloc"); */
+    /*     exit(EXIT_FAILURE); */
+    /* } */
+    control_list ctrls;
 
     /* set with default values */
-    ctrls->ftype = LPF;
-    ctrls->dBgain = 0;  // dB value
-    ctrls->fc = 100;    //Hz value
-    ctrls->fs = (smp_type)jack_get_sample_rate(client);
-    ctrls->bw = 0.25;   //bandwidth (ocataves)
+    ctrls.ftype = LPF;
+    ctrls.dBgain = 0;  // dB value
+    ctrls.fc = 100;    //Hz value
+    ctrls.fs = (smp_type)jack_get_sample_rate(client);
+    ctrls.bw = 0.25;   //bandwidth (ocataves)
 
     /* Compute default biquad lpf */
-    filter = compute_biquad(ctrls->ftype,
-                            ctrls->dBgain,
-                            ctrls->fc,
-                            ctrls->fs,
-                            ctrls->bw);
+    filter = compute_biquad(ctrls.ftype,
+                            ctrls.dBgain,
+                            ctrls.fc,
+                            ctrls.fs,
+                            ctrls.bw);
 
     printf("initial coefficients:\n");
     printf("b0=%f, b1=%f, b2=%f, a1=%f, a2=%f \n", filter->b0, filter->b1, filter->b2, filter->a1, filter->a2);
@@ -369,7 +359,7 @@ start_jack_client(void *ptr)
     /* Tell the JACK server that we are ready to roll.  Our
      * process() callback will start running now. */
 
-    if (jack_activate (client)) {
+    if (jack_activate(client)) {
         fprintf (stderr, "cannot activate client");
         exit (1);
     }
