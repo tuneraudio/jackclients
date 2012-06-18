@@ -10,7 +10,7 @@
 #include <jack/jack.h>
 #include <tunerlib.h>
 
-#define UNUSED(x)  (void)(x)
+#define UNUSED     __attribute__((unused))
 #define STREQ(x,y) (strcmp((x),(y)) == 0)
 
 typedef jack_default_audio_sample_t sample_t;
@@ -398,10 +398,8 @@ start_jack_client()
  * Optimize this function for time!
 ****************************************************/
 int
-process(jack_nframes_t nframes, void *arg)
+process(jack_nframes_t nframes, void UNUSED *arg)
 {
-    UNUSED(arg);
-
     /* consider passing the filter struct */
     //biquad *filter = arg[0];
 
@@ -432,9 +430,8 @@ process(jack_nframes_t nframes, void *arg)
  * decides to disconnect the client.
  */
 void
-jack_shutdown(void *arg)
+jack_shutdown(void UNUSED *arg)
 {
-    UNUSED(arg);
     exit(EXIT_FAILURE);
 }
 
