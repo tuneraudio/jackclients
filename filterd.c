@@ -2,17 +2,21 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
 #include <pthread.h>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <jack/jack.h>
 #include <tunerlib.h>
 
-#define UNUSED     __attribute__((unused))
-#define LOCAL      __thread
-#define STREQ(x,y) (strcmp((x),(y)) == 0)
+#define CHECK(f,c,action) if((f) == -1) { perror((c)); action; }
+#define FAIL(f,c)         CHECK(f,c,exit(EXIT_FAILURE));
+#define STREQ(x,y)        (strcmp((x),(y)) == 0)
+#define UNUSED            __attribute__((unused))
+#define LOCAL             __thread
 
 typedef jack_default_audio_sample_t sample_t;
 
@@ -21,6 +25,8 @@ static LOCAL jack_port_t *input_port;
 static LOCAL jack_port_t *output_port;
 static LOCAL jack_client_t *client;
 static LOCAL biquad_t *filter;
+
+static LOCAL int epollfd;
 
 static filter_t ctrls = {
     .type = FILTER_LOW_PASS,
@@ -39,18 +45,36 @@ static int jack_process(jack_nframes_t nframes, void *);
 static void jack_shutdown(void *);
 
 void
+open_socket()
+{
+}
+
+int
+set_nonblocking(int fd)
+{
+    int ret = fcntl(fd, F_GETFL, 0);
+    CHECK(ret, "fcntl", return -1);
+
+    ret = fcntl(fd, F_SETFL, ret | O_NONBLOCK);
+    CHECK(ret, "fcntl", return -1);
+
+    return 0;
+}
+
+void
 listener()
 {
-    int sfd;
+    epollfd = epoll_create1(0);
+    FAIL(epollfd, "epoll_create");
+
+    int sfd, ret;
     int len;
 
     struct sockaddr_un local;
 
     /* create a unix stream socket */
-    if ((sfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
-        perror("socket");
-        exit(EXIT_FAILURE);
-    }
+    sfd = socket(AF_UNIX, SOCK_STREAM, 0);
+    FAIL(sfd, "socket");
 
     /* assign the socket path */
     local.sun_family = AF_UNIX;
@@ -59,16 +83,19 @@ listener()
 
     len = strlen(local.sun_path) + sizeof(local.sun_family);
 
-    if (bind(sfd, (struct sockaddr *)&local, len) == -1) {
-        perror("bind");
-        exit(EXIT_FAILURE);
-    }
+    ret = bind(sfd, (struct sockaddr *)&local, len);
+    FAIL(ret, "bind");
 
-    /* qeue up to 1 connections, then reject */
-    if (listen(sfd, 1) == -1) {
-        perror("listen");
-        exit(EXIT_FAILURE);
-    }
+    ret = listen(sfd, 1);
+    FAIL(ret, "listen");
+
+    struct epoll_event event = {
+        .data   = { .fd = sfd },
+        .events = EPOLLIN | EPOLLET
+    };
+
+    ret = epoll_ctl(epollfd, EPOLL_CTL_ADD, sfd, &event);
+    FAIL(ret, "epoll_ctl");
 
     run(sfd);
 }
@@ -86,10 +113,7 @@ run(int sfd)
         t = sizeof(remote);
 
         int cfd = accept(sfd, (struct sockaddr *)&remote, &t);
-        if (cfd == -1) {
-            perror("accept");
-            exit(EXIT_FAILURE);
-        }
+        FAIL(cfd, "accept");
 
         printf("fclient: >> Socket Connected <<\n");
 
@@ -97,13 +121,10 @@ run(int sfd)
         while (1) {
             /* wait to receive a command */
             ssize_t ret = recv(cfd, command, sizeof(command), 0);
+            FAIL(ret, "recv");
 
             if (ret == 0)
                 break;
-            else if (ret == -1) {
-                perror("recv");
-                exit(EXIT_FAILURE);
-            }
 
             command[ret] = '\0';
             printf("COMMAND> %s\n", command);
@@ -127,10 +148,8 @@ run(int sfd)
             }
 
             /* transmit response */
-            if (send(cfd, mstatus, ret, 0) < 0) {
-                perror("send");
-                exit(EXIT_FAILURE);
-            }
+            ret = send(cfd, mstatus, ret, 0);
+            FAIL(ret, "send");
 
             /* clear the command */
             /* for (i = 0; i < n; i++) { */
