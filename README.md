@@ -31,8 +31,7 @@ To run the filter:
 Then to run the client:
 
 ```
-cd client
-./fctrl
+./client/fctrl
 ```
 
 ```
