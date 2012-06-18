@@ -36,7 +36,7 @@ static int parse_command(char *command, char *statusmessage);
 
 static void *jack(void *arg);
 static int jack_process(jack_nframes_t nframes, void *);
-static void jack_shutdown(void *arg);
+static void jack_shutdown(void *);
 
 void
 listener()

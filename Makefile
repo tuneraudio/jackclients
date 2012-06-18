@@ -11,10 +11,13 @@ LDFLAGS:=-ljack -lm -lpthread \
 	-Llib -ltuner \
 	${LDFLAGS}
 
-${OUT}: ${OBJ}
+${OUT}: lib ${OBJ}
 	${CC} -o $@ ${OBJ} ${LDFLAGS}
+
+client lib:
+	${MAKE} -C $@
 
 clean:
 	${RM} ${OUT} ${OBJ}
 
-.PHONY: clean install uninstall
+.PHONY: clean lib client install uninstall

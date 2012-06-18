@@ -16,9 +16,8 @@ time filter.
 
 ```
 git submodule update --init
-cd lib
 make
-cd ..
+make client
 ```
 
 ## Usage
@@ -26,7 +25,6 @@ cd ..
 To run the filter:
 
 ```
-make
 ./filterd.sh
 ```
 
@@ -34,7 +32,6 @@ Then to run the client:
 
 ```
 cd client
-make
 ./fctrl
 ```
 
