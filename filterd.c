@@ -84,10 +84,9 @@ accept_conn(int sfd)
 void
 handle(int fd)
 {
-    int cfd;
     cmd_t command;
 
-    ssize_t ret = recv(cfd, command, sizeof(command), 0);
+    ssize_t ret = recv(fd, command, sizeof(command), 0);
     FAIL(ret, "recv");
 
     if (ret == 0) {
@@ -117,7 +116,7 @@ handle(int fd)
     }
 
     /* transmit response */
-    ret = send(cfd, mstatus, ret, 0);
+    ret = send(fd, mstatus, ret, 0);
     FAIL(ret, "send");
 
     /* clear the command */
