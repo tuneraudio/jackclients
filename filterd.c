@@ -11,15 +11,17 @@
 #include <tunerlib.h>
 
 #define UNUSED     __attribute__((unused))
+#define LOCAL      __thread
 #define STREQ(x,y) (strcmp((x),(y)) == 0)
 
 typedef jack_default_audio_sample_t sample_t;
 
 /* Globals */
-jack_port_t *input_port;
-jack_port_t *output_port;
-jack_client_t *client;
-biquad_t *filter;
+LOCAL jack_port_t *input_port;
+LOCAL jack_port_t *output_port;
+LOCAL jack_client_t *client;
+LOCAL biquad_t *filter;
+
 filter_t ctrls = {
     .type = FILTER_LOW_PASS,
     .gain = 0,    // dB value
