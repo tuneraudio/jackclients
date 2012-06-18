@@ -18,7 +18,8 @@ prompt(char *buf, size_t size)
     return buf ? (ssize_t)strlen(buf) : -1;
 }
 
-int main(void)
+int
+main(void)
 {
     struct sockaddr_un remote;
     char command[BUFF_SIZE];
