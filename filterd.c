@@ -17,12 +17,12 @@
 typedef jack_default_audio_sample_t sample_t;
 
 /* Globals */
-LOCAL jack_port_t *input_port;
-LOCAL jack_port_t *output_port;
-LOCAL jack_client_t *client;
-LOCAL biquad_t *filter;
+static LOCAL jack_port_t *input_port;
+static LOCAL jack_port_t *output_port;
+static LOCAL jack_client_t *client;
+static LOCAL biquad_t *filter;
 
-filter_t ctrls = {
+static filter_t ctrls = {
     .type = FILTER_LOW_PASS,
     .gain = 0,    // dB value
     .fc   = 100,  // Hz value
