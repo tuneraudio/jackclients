@@ -7,19 +7,35 @@ server.
 ## Overview
 
 To properly use this client you must run two separate processes.  The
-first is the jack client (`filter_client`) which processes real time
-audio and acts as a Unix socket server, and the second is a Unix socket
-client (`commander`) which transmits requests to change the state of the
-real time filter.
+first is the jack client (`fctrl`) which processes real time audio and
+acts as a Unix socket server, and the second is a Unix socket client
+(`filterd`) which transmits requests to change the state of the real
+time filter.
+
+## Building
+
+```
+git submodule update --init
+cd lib
+make
+cd ..
+```
 
 ## Usage
 
-```
-./filter_client	(in shell 1)
-```
+To run the filter:
 
 ```
-./commander	(in shell 2)
+make
+./filterd.sh
+```
+
+Then to run the client:
+
+```
+cd client
+make
+./fctrl
 ```
 
 ```
