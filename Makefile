@@ -4,11 +4,11 @@ OBJ = ${SRC:.c=.o}
 
 CFLAGS:=-std=gnu99 \
 	-Wall -Wextra -pedantic \
-	-I../tunerlib/include \
+	-Ilib/include \
 	${CFLAGS}
 
 LDFLAGS:=-ljack -lm -lpthread \
-	-L../tunerlib/ -ltuner \
+	-Llib -ltuner \
 	${LDFLAGS}
 
 ${OUT}: ${OBJ}

@@ -5,5 +5,5 @@ if [[ ! -f ./filterd ]]; then
   exit 1
 fi
 
-export LD_LIBRARY_PATH="$PWD/../tunerlib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
 exec ./filterd
