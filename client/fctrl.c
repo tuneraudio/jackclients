@@ -7,8 +7,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-#define SOCK_PATH "command_socket"
-#define BUFF_SIZE (1 << 6)
+#include "../filterd.h"
 
 static inline ssize_t
 prompt(char *buf, size_t size)
@@ -22,7 +21,7 @@ int
 main(void)
 {
     struct sockaddr_un remote;
-    char command[BUFF_SIZE];
+    cmd_t command;
     int fd;
 
     if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
@@ -32,7 +31,7 @@ main(void)
 
     /* assign the socket path */
     remote.sun_family = AF_UNIX;
-    strcpy(remote.sun_path, SOCK_PATH);
+    strcpy(remote.sun_path, socket_path);
     size_t len = strlen(remote.sun_path) + sizeof(remote.sun_family);
 
     if (connect(fd, (struct sockaddr *)&remote, len) == -1) {

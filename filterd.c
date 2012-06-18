@@ -1,18 +1,14 @@
-#include <stdio.h>
-#include <stdbool.h>
-#include <errno.h>
-#include <unistd.h>
+#include "filterd.h"
+
 #include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
 #include <string.h>
 #include <pthread.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <jack/jack.h>
-
 #include <tunerlib.h>
-
-#include "config.h"
 
 #define UNUSED(x) (void)(x)
 
@@ -58,7 +54,7 @@ run(int sfd)
     while (1) {
         struct sockaddr_un remote;
         socklen_t t;
-        char command[64];
+        cmd_t command;
         filter_t ctrls;
 
         printf("fclient: >> Waiting for a connection... <<\n");
@@ -88,7 +84,7 @@ run(int sfd)
             printf("COMMAND> %s\n", command);
 
             /* clear last status */
-            char mstatus[64];
+            cmd_t mstatus;
             mstatus[0] = 0;
             /* strcpy(mstatus, ""); */
 
