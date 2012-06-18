@@ -20,106 +20,24 @@ jack_port_t *input_port;
 jack_port_t *output_port;
 jack_client_t *client;
 biquad_t *filter;
+filter_t ctrls = {
+    .type = FILTER_LOW_PASS,
+    .gain = 0,    // dB value
+    .fc   = 100,  // Hz value
+    .bw   = 0.25, // bandwidth (ocataves)
+};
 
 /* Prototypes */
-void *start_jack_client();
+static void listener(void);
+static void run(int sfd);
+static int parse_command(char *command, char *statusmessage);
 
-void start_messenger();
-
-int process(jack_nframes_t nframes, void *);
-void jack_shutdown(void *arg);
-int parse_command(char *command, filter_t *filter, char *statusmessage);
-
-
-int
-main(void)
-{
-    pthread_t audio;
-
-    /* create the audio engine thread */
-    if ((pthread_create(&audio, NULL, start_jack_client, NULL))) {
-        perror("pthread_create");
-        exit(EXIT_FAILURE);
-    }
-
-    start_messenger();
-
-    pthread_join(audio, NULL);
-    return 0;
-}
+static void *jack(void *arg);
+static int jack_process(jack_nframes_t nframes, void *);
+static void jack_shutdown(void *arg);
 
 void
-run(int sfd)
-{
-    /* wait for the remote connection(s) */
-    while (1) {
-        struct sockaddr_un remote;
-        socklen_t t;
-        cmd_t command;
-        filter_t ctrls;
-
-        printf("fclient: >> Waiting for a connection... <<\n");
-        t = sizeof(remote);
-
-        int cfd = accept(sfd, (struct sockaddr *)&remote, &t);
-        if (cfd == -1) {
-            perror("accept");
-            exit(EXIT_FAILURE);
-        }
-
-        printf("fclient: >> Socket Connected <<\n");
-
-        /* loop to receive data/commands */
-        while (1) {
-            /* wait to receive a command */
-            ssize_t ret = recv(cfd, command, sizeof(command), 0);
-
-            if (ret == 0)
-                break;
-            else if (ret == -1) {
-                perror("recv");
-                exit(EXIT_FAILURE);
-            }
-
-            command[ret] = '\0';
-            printf("COMMAND> %s\n", command);
-
-            /* clear last status */
-            cmd_t mstatus;
-            mstatus[0] = 0;
-            /* strcpy(mstatus, ""); */
-
-            /* parse the command */
-            if (!parse_command(command, &ctrls, mstatus)) {
-                printf("command was parsed with status: %s\n", mstatus);
-
-                /* Compute new biquad (callback) */
-                biquad_init(filter, &ctrls);
-
-                printf("printing control list\n");
-                printf("fc=%f, g=%f, bw=%f \n", ctrls.fc, ctrls.gain, ctrls.bw);
-                /* printf("printing new coefficients:\n"); */
-                /* printf("b0=%f, b1=%f, b2=%f, a1=%f, a2=%f \n\n", filter->b0, filter->b1, filter->b2, filter->a1, filter->a2); */
-            }
-
-            /* transmit response */
-            if (send(cfd, mstatus, ret, 0) < 0) {
-                perror("send");
-                exit(EXIT_FAILURE);
-            }
-
-            /* clear the command */
-            /* for (i = 0; i < n; i++) { */
-                /* command[i] = '\0'; */
-            /* } */
-        }
-
-        close(cfd);
-    }
-}
-
-void
-start_messenger()
+listener()
 {
     int sfd;
     int len;
@@ -153,6 +71,75 @@ start_messenger()
     run(sfd);
 }
 
+void
+run(int sfd)
+{
+    /* wait for the remote connection(s) */
+    while (1) {
+        struct sockaddr_un remote;
+        socklen_t t;
+        cmd_t command;
+
+        printf("fclient: >> Waiting for a connection... <<\n");
+        t = sizeof(remote);
+
+        int cfd = accept(sfd, (struct sockaddr *)&remote, &t);
+        if (cfd == -1) {
+            perror("accept");
+            exit(EXIT_FAILURE);
+        }
+
+        printf("fclient: >> Socket Connected <<\n");
+
+        /* loop to receive data/commands */
+        while (1) {
+            /* wait to receive a command */
+            ssize_t ret = recv(cfd, command, sizeof(command), 0);
+
+            if (ret == 0)
+                break;
+            else if (ret == -1) {
+                perror("recv");
+                exit(EXIT_FAILURE);
+            }
+
+            command[ret] = '\0';
+            printf("COMMAND> %s\n", command);
+
+            /* clear last status */
+            cmd_t mstatus;
+            mstatus[0] = 0;
+            /* strcpy(mstatus, ""); */
+
+            /* parse the command */
+            if (!parse_command(command, mstatus)) {
+                printf("command was parsed with status: %s\n", mstatus);
+
+                /* Compute new biquad (callback) */
+                biquad_init(filter, &ctrls);
+
+                printf("printing control list\n");
+                printf("fc=%f, g=%f, bw=%f \n", ctrls.fc, ctrls.gain, ctrls.bw);
+                /* printf("printing new coefficients:\n"); */
+                /* printf("b0=%f, b1=%f, b2=%f, a1=%f, a2=%f \n\n", filter->b0, filter->b1, filter->b2, filter->a1, filter->a2); */
+            }
+
+            /* transmit response */
+            if (send(cfd, mstatus, ret, 0) < 0) {
+                perror("send");
+                exit(EXIT_FAILURE);
+            }
+
+            /* clear the command */
+            /* for (i = 0; i < n; i++) { */
+                /* command[i] = '\0'; */
+            /* } */
+        }
+
+        close(cfd);
+    }
+}
+
 /**
  * This is the control message parser for this filter client.
  * It is called by whenever a valid message requesting filter
@@ -161,7 +148,7 @@ start_messenger()
  * OUTPUTS: int
  */
 int
-parse_command(char *command, filter_t *list, char *statusmessage)
+parse_command(char *command, char *statusmessage)
 {
     char *control, *value;
     char *saveptr, *endptr;
@@ -193,25 +180,25 @@ parse_command(char *command, filter_t *list, char *statusmessage)
         /* determine the filter type */
         if (STREQ(type, "lpf")) {
             printf("requested an lpf\n");
-            list->type = FILTER_LOW_PASS;
+            ctrls.type = FILTER_LOW_PASS;
         } else if (STREQ(type, "hpf")) {
             printf("requested an hpf\n");
-            list->type = FILTER_HIGH_PASS;
+            ctrls.type = FILTER_HIGH_PASS;
         } else if (STREQ(type, "bpf")) {
             printf("requested an bpf\n");
-            list->type = FILTER_BAND_PASS;
+            ctrls.type = FILTER_BAND_PASS;
         } else if (STREQ(type, "notch")) {
             printf("requested a notch filter\n");
-            list->type = FILTER_NOTCH;
+            ctrls.type = FILTER_NOTCH;
         } else if (STREQ(type, "peq")) {
             printf("requested a peaking eq\n");
-            list->type = FILTER_PEAKING_BAND;
+            ctrls.type = FILTER_PEAKING_BAND;
         } else if (STREQ(type, "lsh")) {
             printf("requested a low shelf filter\n");
-            list->type = FILTER_LOW_SHELF;
+            ctrls.type = FILTER_LOW_SHELF;
         } else if (STREQ(type, "hsh")) {
             printf("requested a high shelf filter\n");
-            list->type = FILTER_HIGH_SHELF;
+            ctrls.type = FILTER_HIGH_SHELF;
         } else {
             printf("requested an unsupported filter type\n");
             strcpy(statusmessage, "");
@@ -239,13 +226,13 @@ parse_command(char *command, filter_t *list, char *statusmessage)
 
         /* check which control */
         if (STREQ(control, "fc")) {
-            list->fc = fpval;
+            ctrls.fc = fpval;
             strcpy(statusmessage, "cut off frequency change success");
         } else if (STREQ(control, "g")) {
-            list->gain = fpval;
+            ctrls.gain = fpval;
             strcpy(statusmessage, "gain change success");
         } else if (STREQ(control, "bw")) {
-            list->bw = fpval;
+            ctrls.bw = fpval;
             strcpy(statusmessage, "bandwith change success");
         } else {
             printf("control parameter requested not found in list!\n");
@@ -256,46 +243,38 @@ parse_command(char *command, filter_t *list, char *statusmessage)
     return 0;
 }
 
+/* JACK {{{ */
 void *
-start_jack_client()
+jack(void UNUSED *arg)
 {
     const char *client_name = "filter";
     const char *server_name = NULL;
-    jack_options_t options = JackNoStartServer|JackUseExactName|JackSessionID;
+    jack_options_t options = JackNoStartServer | JackUseExactName | JackSessionID;
     jack_status_t status;
 
     /* open a client connection to the JACK server */
-    client = jack_client_open (client_name, options, &status, server_name);
+    client = jack_client_open(client_name, options, &status, server_name);
     if (client == NULL) {
-        fprintf (stderr, "jack_client_open() failed, "
+        fprintf(stderr, "jack_client_open() failed, "
                 "status = 0x%2.0x\n", status);
         if (status & JackServerFailed) {
             fprintf (stderr, "Unable to connect to JACK server\n");
         }
-        exit (1);
+        exit(EXIT_FAILURE);
     }
     if (status & JackServerStarted) {
-        fprintf (stderr, "JACK server started\n");
+        fprintf(stderr, "JACK server started\n");
     }
     if (status & JackNameNotUnique) {
         client_name = jack_get_client_name(client);
-        fprintf (stderr, "unique name `%s' assigned\n", client_name);
+        fprintf(stderr, "unique name `%s' assigned\n", client_name);
     }
 
-    /* tell the JACK server to call `process()' whenever
-       there is work to be done.  */
-    jack_set_process_callback(client, process, 0);
-
-
-    /* tell the JACK server to call `jack_shutdown()' if
-       it ever shuts down, either entirely, or if it
-       just decides to stop calling us.  */
+    jack_set_process_callback(client, jack_process, 0);
     jack_on_shutdown(client, jack_shutdown, 0);
-
 
     /* display the current sample rate.  */
     printf("engine sample rate: %" PRIu32 "\n", jack_get_sample_rate (client));
-
 
     /* create two ports */
     input_port = jack_port_register(client, "input",
@@ -311,33 +290,15 @@ start_jack_client()
         exit (1);
     }
 
-    /* create and initialize the control list */
-    /* ctrls = malloc(sizeof(control_list)); */
-    /* if (!ctrls) { */
-    /*     perror("malloc"); */
-    /*     exit(EXIT_FAILURE); */
-    /* } */
-    filter_t ctrls = {
-        .type = FILTER_LOW_PASS,
-        .gain = 0,                            // dB value
-        .fc   = 100,                          // Hz value
-        .fs   = jack_get_sample_rate(client),
-        .bw   = 0.25,                         // bandwidth (ocataves)
-    };
-
-    /* Compute default biquad lpf */
+    ctrls.fs = jack_get_sample_rate(client),
     filter = biquad_new(&ctrls);
 
-    printf("initial coefficients:\n");
+    /* printf("initial coefficients:\n"); */
     /* printf("b0=%f, b1=%f, b2=%f, a1=%f, a2=%f \n", filter->b0, filter->b1, filter->b2, filter->a1, filter->a2); */
 
-
-    /* Tell the JACK server that we are ready to roll.  Our
-     * process() callback will start running now. */
-
     if (jack_activate(client)) {
-        fprintf (stderr, "cannot activate client");
-        exit (1);
+        fprintf(stderr, "cannot activate client");
+        exit(EXIT_FAILURE);
     }
 
 
@@ -381,14 +342,11 @@ start_jack_client()
 */
     /* keep running until stopped by the user */
 
-    sleep (-1);
+    sleep(-1);
 
-    /* this is never reached, but if the program
-       had some other way to exit besides being killed,
-       they would be important to call.  */
-
-    jack_client_close (client);
-    exit (0);
+    /* This code should never run */
+    jack_client_close(client);
+    exit(EXIT_FAILURE);
 }
 
 /****************************************************
@@ -398,7 +356,7 @@ start_jack_client()
  * Optimize this function for time!
 ****************************************************/
 int
-process(jack_nframes_t nframes, void UNUSED *arg)
+jack_process(jack_nframes_t nframes, void UNUSED *arg)
 {
     /* consider passing the filter struct */
     //biquad *filter = arg[0];
@@ -433,6 +391,24 @@ void
 jack_shutdown(void UNUSED *arg)
 {
     exit(EXIT_FAILURE);
+}
+/* }}} */
+
+int
+main(void)
+{
+    pthread_t audio;
+
+    /* create the audio engine thread */
+    if ((pthread_create(&audio, NULL, jack, NULL))) {
+        perror("pthread_create");
+        exit(EXIT_FAILURE);
+    }
+
+    listener();
+
+    pthread_join(audio, NULL);
+    return 0;
 }
 
 // vim: et:sts=4:sw=4:cino=(0
