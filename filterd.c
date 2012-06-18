@@ -191,25 +191,25 @@ parse_command(char *command, filter_t *list, char *statusmessage)
         strcpy(statusmessage, "filter type change success");
 
         /* determine the filter type */
-        if(STREQ(type, "lpf")) {
+        if (STREQ(type, "lpf")) {
             printf("requested an lpf\n");
             list->type = FILTER_LOW_PASS;
-        } else if(STREQ(type, "hpf")) {
+        } else if (STREQ(type, "hpf")) {
             printf("requested an hpf\n");
             list->type = FILTER_HIGH_PASS;
-        } else if(STREQ(type, "bpf")) {
+        } else if (STREQ(type, "bpf")) {
             printf("requested an bpf\n");
             list->type = FILTER_BAND_PASS;
-        } else if(STREQ(type, "notch")) {
+        } else if (STREQ(type, "notch")) {
             printf("requested a notch filter\n");
             list->type = FILTER_NOTCH;
-        } else if(STREQ(type, "peq")) {
+        } else if (STREQ(type, "peq")) {
             printf("requested a peaking eq\n");
             list->type = FILTER_PEAKING_BAND;
-        } else if(STREQ(type, "lsh")) {
+        } else if (STREQ(type, "lsh")) {
             printf("requested a low shelf filter\n");
             list->type = FILTER_LOW_SHELF;
-        } else if(STREQ(type, "hsh")) {
+        } else if (STREQ(type, "hsh")) {
             printf("requested a high shelf filter\n");
             list->type = FILTER_HIGH_SHELF;
         } else {
@@ -417,7 +417,7 @@ process(jack_nframes_t nframes, void *arg)
 
 
     /* bypass switch */
-    /* if( STATE == ON) { */
+    /* if ( STATE == ON) { */
     /*     memcpy (out, in, sizeof(sample_t) * nframes); */
     /* } */
 
