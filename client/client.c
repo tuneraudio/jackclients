@@ -10,11 +10,12 @@
 #define SOCK_PATH "command_socket"
 #define BUFF_SIZE (1 << 6)
 
-static inline size_t
+static inline ssize_t
 prompt(char *buf, size_t size)
 {
     printf("command> ");
-    return fread(buf, 1, size, stdin);
+    fgets(buf, size, stdin);
+    return buf ? (ssize_t)strlen(buf) : -1;
 }
 
 int main(void)
