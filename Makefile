@@ -7,7 +7,9 @@ CFLAGS:=-std=gnu99 \
 	-I../tunerlib/include \
 	${CFLAGS}
 
-LDFLAGS:=-ljack -lm -lpthread ${LDFLAGS}
+LDFLAGS:=-ljack -lm -lpthread \
+	-L../tunerlib/ -ltuner \
+	${LDFLAGS}
 
 ${OUT}: ${OBJ}
 	${CC} -o $@ ${OBJ} ${LDFLAGS}
