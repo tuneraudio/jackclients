@@ -36,30 +36,109 @@ static filter_t ctrls = {
 };
 
 /* Prototypes */
+static int open_socket(void);
+static void accept_conn(int sfd);
+static void handle(int fd);
+static int set_nonblocking(int fd);
 static void listener(void);
-static void run(int sfd);
 static int parse_command(char *command, char *statusmessage);
 
 static void *jack(void *arg);
 static int jack_process(jack_nframes_t nframes, void *);
 static void jack_shutdown(void *);
 
-void
-open_socket()
+int
+open_socket(void)
 {
+    struct sockaddr_un local;
+    int sfd;
+
+    sfd = socket(AF_UNIX, SOCK_STREAM, 0);
+    FAIL(sfd, "socket");
+
+    local.sun_family = AF_UNIX;
+    strcpy(local.sun_path, socket_path);
+    unlink(local.sun_path);
+
+    int ret = bind(sfd, (struct sockaddr *)&local, sizeof(local));
+    FAIL(ret, "bind");
+
+    return sfd;
+}
+
+void
+accept_conn(int sfd)
+{
+    struct sockaddr_un remote;
+    socklen_t t;
+
+    printf("fclient: >> Waiting for a connection... <<\n");
+    t = sizeof(remote);
+
+    int cfd = accept(sfd, (struct sockaddr *)&remote, &t);
+    FAIL(cfd, "accept");
+
+    printf("fclient: >> Socket Connected <<\n");
+}
+
+void
+handle(int fd)
+{
+    int cfd;
+    cmd_t command;
+
+    ssize_t ret = recv(cfd, command, sizeof(command), 0);
+    FAIL(ret, "recv");
+
+    if (ret == 0) {
+        close(fd);
+        return;
+    }
+
+    command[ret] = '\0';
+    printf("COMMAND> %s\n", command);
+
+    /* clear last status */
+    cmd_t mstatus;
+    mstatus[0] = 0;
+    /* strcpy(mstatus, ""); */
+
+    /* parse the command */
+    if (!parse_command(command, mstatus)) {
+        printf("command was parsed with status: %s\n", mstatus);
+
+        /* Compute new biquad (callback) */
+        biquad_init(filter, &ctrls);
+
+        printf("printing control list\n");
+        printf("fc=%f, g=%f, bw=%f \n", ctrls.fc, ctrls.gain, ctrls.bw);
+        /* printf("printing new coefficients:\n"); */
+        /* printf("b0=%f, b1=%f, b2=%f, a1=%f, a2=%f \n\n", filter->b0, filter->b1, filter->b2, filter->a1, filter->a2); */
+    }
+
+    /* transmit response */
+    ret = send(cfd, mstatus, ret, 0);
+    FAIL(ret, "send");
+
+    /* clear the command */
+    /* for (i = 0; i < n; i++) { */
+    /* command[i] = '\0'; */
+    /* } */
 }
 
 int
 set_nonblocking(int fd)
 {
     int ret = fcntl(fd, F_GETFL, 0);
-    CHECK(ret, "fcntl", return -1);
+    CHECK(ret, "fcntl getfl", return -1);
 
     ret = fcntl(fd, F_SETFL, ret | O_NONBLOCK);
-    CHECK(ret, "fcntl", return -1);
+    CHECK(ret, "fcntl setfl", return -1);
 
     return 0;
 }
+
+#define MAXEVENTS 16
 
 void
 listener()
@@ -67,27 +146,12 @@ listener()
     epollfd = epoll_create1(0);
     FAIL(epollfd, "epoll_create");
 
-    int sfd, ret;
-    int len;
+    int sfd = open_socket();
 
-    struct sockaddr_un local;
-
-    /* create a unix stream socket */
-    sfd = socket(AF_UNIX, SOCK_STREAM, 0);
-    FAIL(sfd, "socket");
-
-    /* assign the socket path */
-    local.sun_family = AF_UNIX;
-    strcpy(local.sun_path, socket_path);
-    unlink(local.sun_path);
-
-    len = strlen(local.sun_path) + sizeof(local.sun_family);
-
-    ret = bind(sfd, (struct sockaddr *)&local, len);
-    FAIL(ret, "bind");
-
-    ret = listen(sfd, 1);
+    int ret = listen(sfd, 1);
     FAIL(ret, "listen");
+
+    ret = set_nonblocking(sfd);
 
     struct epoll_event event = {
         .data   = { .fd = sfd },
@@ -97,67 +161,26 @@ listener()
     ret = epoll_ctl(epollfd, EPOLL_CTL_ADD, sfd, &event);
     FAIL(ret, "epoll_ctl");
 
-    run(sfd);
-}
-
-void
-run(int sfd)
-{
-    /* wait for the remote connection(s) */
+    struct epoll_event events[MAXEVENTS];
     while (1) {
-        struct sockaddr_un remote;
-        socklen_t t;
-        cmd_t command;
+        int n = epoll_wait(epollfd, events, MAXEVENTS, -1);
 
-        printf("fclient: >> Waiting for a connection... <<\n");
-        t = sizeof(remote);
+        for (int i = 0; i < n; i++) {
+            struct epoll_event ev = events[i];
 
-        int cfd = accept(sfd, (struct sockaddr *)&remote, &t);
-        FAIL(cfd, "accept");
-
-        printf("fclient: >> Socket Connected <<\n");
-
-        /* loop to receive data/commands */
-        while (1) {
-            /* wait to receive a command */
-            ssize_t ret = recv(cfd, command, sizeof(command), 0);
-            FAIL(ret, "recv");
-
-            if (ret == 0)
-                break;
-
-            command[ret] = '\0';
-            printf("COMMAND> %s\n", command);
-
-            /* clear last status */
-            cmd_t mstatus;
-            mstatus[0] = 0;
-            /* strcpy(mstatus, ""); */
-
-            /* parse the command */
-            if (!parse_command(command, mstatus)) {
-                printf("command was parsed with status: %s\n", mstatus);
-
-                /* Compute new biquad (callback) */
-                biquad_init(filter, &ctrls);
-
-                printf("printing control list\n");
-                printf("fc=%f, g=%f, bw=%f \n", ctrls.fc, ctrls.gain, ctrls.bw);
-                /* printf("printing new coefficients:\n"); */
-                /* printf("b0=%f, b1=%f, b2=%f, a1=%f, a2=%f \n\n", filter->b0, filter->b1, filter->b2, filter->a1, filter->a2); */
+            /* error on the fd */
+            if ((ev.events & EPOLLERR) || (ev.events & EPOLLHUP)) {
+                fprintf(stderr, "epoll error");
+                close(ev.data.fd);
+                continue;
             }
 
-            /* transmit response */
-            ret = send(cfd, mstatus, ret, 0);
-            FAIL(ret, "send");
-
-            /* clear the command */
-            /* for (i = 0; i < n; i++) { */
-                /* command[i] = '\0'; */
-            /* } */
+            if (ev.data.fd == sfd) {
+                accept_conn(sfd);
+            } else {
+                handle(ev.data.fd);
+            }
         }
-
-        close(cfd);
     }
 }
 

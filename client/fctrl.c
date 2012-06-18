@@ -32,9 +32,8 @@ main(void)
     /* assign the socket path */
     remote.sun_family = AF_UNIX;
     strcpy(remote.sun_path, socket_path);
-    size_t len = strlen(remote.sun_path) + sizeof(remote.sun_family);
 
-    if (connect(fd, (struct sockaddr *)&remote, len) == -1) {
+    if (connect(fd, (struct sockaddr *)&remote, sizeof(remote)) == -1) {
         perror("connect");
         exit(EXIT_FAILURE);
     }
