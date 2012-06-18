@@ -10,7 +10,8 @@
 #include <jack/jack.h>
 #include <tunerlib.h>
 
-#define UNUSED(x) (void)(x)
+#define UNUSED(x)  (void)(x)
+#define STREQ(x,y) (strcmp((x),(y)) == 0)
 
 typedef jack_default_audio_sample_t sample_t;
 
@@ -185,41 +186,38 @@ parse_command(char *command, filter_t *list, char *statusmessage)
     }
 
     /* filter type change request */
-    if (strcmp(control, "type") == 0) {
+    if (STREQ(control, "type")) {
         type = value;
         strcpy(statusmessage, "filter type change success");
 
         /* determine the filter type */
-        if(strcmp(type, "lpf") == 0) {
+        if(STREQ(type, "lpf")) {
             printf("requested an lpf\n");
             list->type = FILTER_LOW_PASS;
-        } else if(strcmp(type, "hpf") == 0) {
+        } else if(STREQ(type, "hpf")) {
             printf("requested an hpf\n");
             list->type = FILTER_HIGH_PASS;
-        } else if(strcmp(type, "bpf") == 0) {
+        } else if(STREQ(type, "bpf")) {
             printf("requested an bpf\n");
             list->type = FILTER_BAND_PASS;
-        } else if(strcmp(type, "notch") == 0) {
+        } else if(STREQ(type, "notch")) {
             printf("requested a notch filter\n");
             list->type = FILTER_NOTCH;
-        } else if(strcmp(type, "peq") == 0) {
+        } else if(STREQ(type, "peq")) {
             printf("requested a peaking eq\n");
             list->type = FILTER_PEAKING_BAND;
-        } else if(strcmp(type, "lsh") == 0) {
+        } else if(STREQ(type, "lsh")) {
             printf("requested a low shelf filter\n");
             list->type = FILTER_LOW_SHELF;
-        } else if(strcmp(type, "hsh") == 0) {
+        } else if(STREQ(type, "hsh")) {
             printf("requested a high shelf filter\n");
             list->type = FILTER_HIGH_SHELF;
-
         } else {
             printf("requested an unsupported filter type\n");
             strcpy(statusmessage, "");
             strcpy(statusmessage, "filter type change failed");
-
         }
     } else {
-
         /* convert str to double */
         fpval = strtod(value, &endptr);
 
@@ -240,13 +238,13 @@ parse_command(char *command, filter_t *list, char *statusmessage)
             printf("Further characters after number: %s\n", endptr);
 
         /* check which control */
-        if (strcmp(control, "fc") == 0) {
+        if (STREQ(control, "fc")) {
             list->fc = fpval;
             strcpy(statusmessage, "cut off frequency change success");
-        } else if (strcmp(control, "g") == 0) {
+        } else if (STREQ(control, "g")) {
             list->gain = fpval;
             strcpy(statusmessage, "gain change success");
-        } else if (strcmp(control, "bw") == 0) {
+        } else if (STREQ(control, "bw")) {
             list->bw = fpval;
             strcpy(statusmessage, "bandwith change success");
         } else {
