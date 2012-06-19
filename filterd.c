@@ -12,6 +12,8 @@
 #include <jack/jack.h>
 #include <tunerlib.h>
 
+#define MAXEVENTS         10
+
 #define CHECK(f,c,action) if((f) == -1) { perror((c)); action; }
 #define FAIL(f,c)         CHECK(f,c,exit(EXIT_FAILURE));
 #define STREQ(x,y)        (strcmp((x),(y)) == 0)
@@ -70,15 +72,20 @@ void
 accept_conn(int sfd)
 {
     struct sockaddr_un remote;
-    socklen_t t;
-
-    printf("fclient: >> Waiting for a connection... <<\n");
-    t = sizeof(remote);
-
-    int cfd = accept(sfd, (struct sockaddr *)&remote, &t);
+    socklen_t len;
+    int cfd = accept(sfd, (struct sockaddr *)&remote, &len);
     FAIL(cfd, "accept");
 
     printf("fclient: >> Socket Connected <<\n");
+
+    set_nonblocking(cfd);
+    struct epoll_event event = {
+        .data   = { .fd = cfd },
+        .events = EPOLLIN | EPOLLET
+    };
+
+    int ret = epoll_ctl(epollfd, EPOLL_CTL_ADD, cfd, &event);
+    FAIL(ret, "epoll_ctl");
 }
 
 void
@@ -99,30 +106,24 @@ handle(int fd)
 
     /* clear last status */
     cmd_t mstatus;
-    mstatus[0] = 0;
-    /* strcpy(mstatus, ""); */
 
     /* parse the command */
     if (!parse_command(command, mstatus)) {
         printf("command was parsed with status: %s\n", mstatus);
 
         /* Compute new biquad (callback) */
+        /* TODO: lock */
         biquad_init(filter, &ctrls);
 
         printf("printing control list\n");
         printf("fc=%f, g=%f, bw=%f \n", ctrls.fc, ctrls.gain, ctrls.bw);
         /* printf("printing new coefficients:\n"); */
         /* printf("b0=%f, b1=%f, b2=%f, a1=%f, a2=%f \n\n", filter->b0, filter->b1, filter->b2, filter->a1, filter->a2); */
+
+        /* transmit response */
+        ret = send(fd, mstatus, ret, 0);
+        FAIL(ret, "send");
     }
-
-    /* transmit response */
-    ret = send(fd, mstatus, ret, 0);
-    FAIL(ret, "send");
-
-    /* clear the command */
-    /* for (i = 0; i < n; i++) { */
-    /* command[i] = '\0'; */
-    /* } */
 }
 
 int
@@ -136,8 +137,6 @@ set_nonblocking(int fd)
 
     return 0;
 }
-
-#define MAXEVENTS 16
 
 void
 listener()
