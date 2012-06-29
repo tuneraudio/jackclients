@@ -17,12 +17,12 @@
 typedef jack_default_audio_sample_t sample_t;
 
 /* Globals */
-static LOCAL jack_port_t *input_port;
-static LOCAL jack_port_t *output_port;
+static jack_port_t *input_port;
+static jack_port_t *output_port;
+static biquad_t *filter;
 static LOCAL jack_client_t *client;
-static LOCAL biquad_t *filter;
 
-static filter_t ctrls = {
+static filter_controls_t ctrls = {
     .type = FILTER_LOW_PASS,
     .gain = 0,    // dB value
     .fc   = 100,  // Hz value
@@ -272,6 +272,7 @@ jack(void UNUSED *arg)
         fprintf(stderr, "unique name `%s' assigned\n", client_name);
     }
 
+    /* define callbacks */
     jack_set_process_callback(client, jack_process, 0);
     jack_on_shutdown(client, jack_shutdown, 0);
 
@@ -298,6 +299,8 @@ jack(void UNUSED *arg)
     /* printf("initial coefficients:\n"); */
     /* printf("b0=%f, b1=%f, b2=%f, a1=%f, a2=%f \n", filter->b0, filter->b1, filter->b2, filter->a1, filter->a2); */
 
+    /* Tell the JACK server that we are ready to roll.  Our
+    * process() callback will start running now. */
     if (jack_activate(client)) {
         fprintf(stderr, "cannot activate client");
         exit(EXIT_FAILURE);
@@ -317,13 +320,14 @@ jack(void UNUSED *arg)
     const char **ports;
 
     ports = jack_get_ports (client, NULL, NULL, JackPortIsPhysical|JackPortIsOutput);
-    if (ports == NULL) {
-    fprintf(stderr, "no physical capture ports\n");
-    exit (1);
+        if (ports == NULL) {
+        fprintf(stderr, "no physical capture ports\n");
+        exit (1);
     }
 
     if (jack_connect (client, ports[0], jack_port_name (input_port))) {
-    fprintf (stderr, "cannot connect input ports\n");
+        fprintf (stderr, "cannot connect input ports\n");
+
     }
 
     free (ports);
@@ -332,12 +336,12 @@ jack(void UNUSED *arg)
                 JackPortIsPhysical|JackPortIsInput);
 
     if (ports == NULL) {
-    fprintf(stderr, "no physical playback ports\n");
-    exit (1);
+        fprintf(stderr, "no physical playback ports\n");
+        exit (1);
     }
 
     if (jack_connect (client, jack_port_name (output_port), ports[0])) {
-    fprintf (stderr, "cannot connect output ports\n");
+        fprintf (stderr, "cannot connect output ports\n");
     }
 
     free (ports);
@@ -369,7 +373,7 @@ jack_process(jack_nframes_t nframes, void UNUSED *arg)
 
     for (size_t i = 0; i < nframes; i++) {
         /* compute the output sample */
-        outsample = df1(in[i], filter);
+        outsample = df1((smp_t)in[i], filter);
         out[i] = (sample_t)outsample;
     }
 

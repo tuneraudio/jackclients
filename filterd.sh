@@ -7,3 +7,5 @@ fi
 
 export LD_LIBRARY_PATH="$PWD/lib:$LD_LIBRARY_PATH"
 exec ./filterd
+
+#to build lib with debug symbols use: make CFLAGS+= "-O 0 -g"

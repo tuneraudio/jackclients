@@ -5,6 +5,7 @@ OBJ = ${SRC:.c=.o}
 CFLAGS:=-std=gnu99 \
 	-Wall -Wextra -pedantic \
 	-Ilib/include \
+	-g \
 	${CFLAGS}
 
 LDFLAGS:=-ljack -lm -lpthread \
